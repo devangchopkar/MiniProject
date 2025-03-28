@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Classification Map</title>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: #f3f4f6; }
+        #map { height: 500px; width: 100%; margin-top: 10px; }
+        .info { font-size: 18px; padding: 10px; background: white; border-radius: 8px; }
+        button { padding: 10px; background: blue; color: white; border: none; cursor: pointer; border-radius: 8px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h2>🚗 Vehicle Classification Map</h2>
+    <p class="info">📍 <b>Latitude:</b> <span id="latitude">Loading...</span></p>
+    <p class="info">📍 <b>Longitude:</b> <span id="longitude">Loading...</span></p>
+    <p class="info">🚀 <b>Speed:</b> <span id="speed">0</span> km/h</p>
+    <button onclick="classifyLocation()">Check Road Type</button>
+    <p id="result" class="info">Click the button to classify road type.</p>
+    <div id="map"></div>
+
+    <script>
+        let latitude, longitude, speed = 0;
+        let prevLat = null, prevLon = null, prevTimestamp = null;
+        let map = L.map('map').setView([20.5937, 78.9629], 5);
+        let marker;
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        function getCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    (position) => {
+                        latitude = position.coords.latitude;
+                        longitude = position.coords.longitude;
+                        let currentTimestamp = position.timestamp;
+
+                        // Calculate speed if GPS speed is not provided
+                        if (position.coords.speed) {
+                            speed = position.coords.speed * 3.6; // m/s to km/h
+                        } else if (prevLat && prevLon && prevTimestamp) {
+                            let distance = haversineDistance(prevLat, prevLon, latitude, longitude);
+                            let timeElapsed = (currentTimestamp - prevTimestamp) / 1000 / 3600; // hours
+                            speed = timeElapsed > 0 ? (distance / timeElapsed) : 0;
+                        }
+
+                        prevLat = latitude;
+                        prevLon = longitude;
+                        prevTimestamp = currentTimestamp;
+
+                        document.getElementById("latitude").textContent = latitude.toFixed(6);
+                        document.getElementById("longitude").textContent = longitude.toFixed(6);
+                        document.getElementById("speed").textContent = speed.toFixed(2);
+
+                        if (marker) map.removeLayer(marker);
+                        marker = L.marker([latitude, longitude])
+                                  .addTo(map)
+                                  .bindPopup(`<b>Speed:</b> ${speed.toFixed(2)} km/h`)
+                                  .openPopup();
+                        map.setView([latitude, longitude], 14);
+                    },
+                    (error) => console.error("Error fetching location", error),
+                    { enableHighAccuracy: true }
+                );
+            }
+        }
+
+        function haversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth's radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) ** 2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function classifyLocation() {
+            fetch("http://192.168.198.112:8000/classify", {  // Use your PC's IP here
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ latitude, longitude, speed })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("result").textContent = `🏁 ${data.predicted_type}`;
+            })
+            .catch(error => {
+                console.error("Error fetching data", error);
+                document.getElementById("result").textContent = "Error fetching data";
+            });
+        }
+
+        // Start tracking the location immediately
+        getCurrentLocation();
+    </script>
+</body>
+</html>
